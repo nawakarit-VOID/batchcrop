@@ -2,3 +2,14 @@
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License v3.0.
 package main
+
+import (
+	"batchcrop/model"
+	"batchcrop/ui"
+)
+
+func main() {
+	state := model.NewState()
+
+	ui.Run(state)
+}
