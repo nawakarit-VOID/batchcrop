@@ -1,21 +1,22 @@
 // Copyright (c) 2026 Nawakarit
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License v3.0.
-package model
+package main
+
+import "image"
 
 type AppState struct {
-	Images []string
+	InputDir  string
+	OutputDir string
 
+	Images  []string
 	Current int
 
-	CropX int
-	CropY int
-	CropW int
-	CropH int
+	Img image.Image
+
+	Crop image.Rectangle
 
 	Zoom float32
-
-	OutputDir string
 }
 
 func NewState() *AppState {

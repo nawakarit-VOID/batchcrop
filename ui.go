@@ -2,17 +2,3 @@
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License v3.0.
 package main
-
-import (
-	"fyne.io/fyne/v2/app"
-)
-
-func main() {
-	a := app.New()
-
-	state := NewState()
-
-	w := BuildUI(a, state)
-
-	w.ShowAndRun()
-}
