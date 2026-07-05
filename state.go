@@ -12,15 +12,11 @@ type AppState struct {
 	Images  []string
 	Current int
 
-	Img image.Image
+	Image image.Image
 
 	Crop image.Rectangle
-
-	Zoom float32
 }
 
 func NewState() *AppState {
-	return &AppState{
-		Zoom: 1.0,
-	}
+	return &AppState{}
 }
