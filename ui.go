@@ -19,7 +19,7 @@ func BuildUI(a fyne.App, state *AppState) fyne.Window {
 		nil,
 		nil,
 		nil,
-		preview,
+		preview.CanvasObject(),
 	)
 
 	w.SetContent(ui)

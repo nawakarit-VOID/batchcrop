@@ -8,90 +8,78 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
-	"fyne.io/fyne/v2/widget"
+	"fyne.io/fyne/v2/container"
 )
 
 type Preview struct {
-	widget.BaseWidget
-
 	state *AppState
 
-	bg     *canvas.Rectangle
-	border *canvas.Rectangle
-	label  *canvas.Text
+	root *fyne.Container
+
+	background *canvas.Rectangle
+	border     *canvas.Rectangle
+	label      *canvas.Text
 }
 
 func NewPreview(state *AppState) *Preview {
+
+	bg := canvas.NewRectangle(color.NRGBA{
+		R: 45,
+		G: 45,
+		B: 45,
+		A: 255,
+	})
+
+	border := canvas.NewRectangle(color.Transparent)
+	border.StrokeColor = color.NRGBA{180, 180, 180, 255}
+	border.StrokeWidth = 2
+
+	label := canvas.NewText("Preview Area", color.White)
+	label.TextSize = 20
+
+	root := container.NewWithoutLayout(
+		bg,
+		border,
+		label,
+	)
+
 	p := &Preview{
-		state: state,
-		bg: canvas.NewRectangle(color.NRGBA{
-			R: 45,
-			G: 45,
-			B: 45,
-			A: 255,
-		}),
-		border: canvas.NewRectangle(color.Transparent),
-		label:  canvas.NewText("Preview Area", color.White),
+		state:      state,
+		root:       root,
+		background: bg,
+		border:     border,
+		label:      label,
 	}
 
-	p.border.StrokeColor = color.NRGBA{R: 160, G: 160, B: 160, A: 255}
-	p.border.StrokeWidth = 2
+	root.Resize(fyne.NewSize(800, 600))
 
-	p.ExtendBaseWidget(p)
+	p.Layout()
 
 	return p
 }
 
-func (p *Preview) CreateRenderer() fyne.WidgetRenderer {
-	objects := []fyne.CanvasObject{
-		p.bg,
-		p.border,
-		p.label,
-	}
-
-	return &previewRenderer{
-		preview: p,
-		objects: objects,
-	}
+func (p *Preview) CanvasObject() fyne.CanvasObject {
+	return p.root
 }
 
-type previewRenderer struct {
-	preview *Preview
-	objects []fyne.CanvasObject
-}
+func (p *Preview) Layout() {
 
-func (r *previewRenderer) Layout(size fyne.Size) {
+	size := p.root.Size()
 
-	r.preview.bg.Resize(size)
+	p.background.Resize(size)
 
 	margin := float32(40)
 
-	r.preview.border.Move(fyne.NewPos(margin, margin))
-	r.preview.border.Resize(fyne.NewSize(
+	p.border.Move(fyne.NewPos(margin, margin))
+	p.border.Resize(fyne.NewSize(
 		size.Width-margin*2,
 		size.Height-margin*2,
 	))
 
-	labelSize := r.preview.label.MinSize()
+	labelSize := p.label.MinSize()
 
-	r.preview.label.Move(fyne.NewPos(
+	p.label.Move(fyne.NewPos(
 		(size.Width-labelSize.Width)/2,
 		(size.Height-labelSize.Height)/2,
 	))
-}
-
-func (r *previewRenderer) MinSize() fyne.Size {
-	return fyne.NewSize(400, 300)
-}
-
-func (r *previewRenderer) Refresh() {
-	canvas.Refresh(r.preview.bg)
-	canvas.Refresh(r.preview.border)
-	canvas.Refresh(r.preview.label)
-}
-
-func (r *previewRenderer) Destroy() {}
-
-func (r *previewRenderer) Objects() []fyne.CanvasObject {
-	return r.objects
 }
