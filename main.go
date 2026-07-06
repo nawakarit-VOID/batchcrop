@@ -6,11 +6,13 @@ package main
 import "fyne.io/fyne/v2/app"
 
 func main() {
+
 	a := app.New()
 
 	state := NewState()
 
-	w := BuildUI(a, state)
+	ui := BuildUI(a, state)
 
-	w.ShowAndRun()
+	ui.Window.ShowAndRun()
+
 }
