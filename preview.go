@@ -4,7 +4,7 @@
 package main
 
 import (
-	"image/color"
+	"image"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
@@ -16,44 +16,26 @@ type Preview struct {
 
 	root *fyne.Container
 
-	background *canvas.Rectangle
-	border     *canvas.Rectangle
-	label      *canvas.Text
+	bg *canvas.Rectangle
+
+	img *canvas.Image
 }
 
 func NewPreview(state *AppState) *Preview {
 
-	bg := canvas.NewRectangle(color.NRGBA{
-		R: 45,
-		G: 45,
-		B: 45,
-		A: 255,
-	})
-
-	border := canvas.NewRectangle(color.Transparent)
-	border.StrokeColor = color.NRGBA{180, 180, 180, 255}
-	border.StrokeWidth = 2
-
-	label := canvas.NewText("Preview Area", color.White)
-	label.TextSize = 20
-
-	root := container.NewWithoutLayout(
-		bg,
-		border,
-		label,
-	)
-
 	p := &Preview{
-		state:      state,
-		root:       root,
-		background: bg,
-		border:     border,
-		label:      label,
+		state: state,
 	}
 
-	root.Resize(fyne.NewSize(800, 600))
+	p.bg = canvas.NewRectangle(themeBackground())
 
-	p.Layout()
+	p.img = canvas.NewImageFromImage(nil)
+	p.img.FillMode = canvas.ImageFillContain
+
+	p.root = container.NewMax(
+		p.bg,
+		p.img,
+	)
 
 	return p
 }
@@ -62,24 +44,11 @@ func (p *Preview) CanvasObject() fyne.CanvasObject {
 	return p.root
 }
 
-func (p *Preview) Layout() {
+func (p *Preview) SetImage(img image.Image) {
 
-	size := p.root.Size()
+	p.state.Img = img
 
-	p.background.Resize(size)
+	p.img.Image = img
+	p.img.Refresh()
 
-	margin := float32(40)
-
-	p.border.Move(fyne.NewPos(margin, margin))
-	p.border.Resize(fyne.NewSize(
-		size.Width-margin*2,
-		size.Height-margin*2,
-	))
-
-	labelSize := p.label.MinSize()
-
-	p.label.Move(fyne.NewPos(
-		(size.Width-labelSize.Width)/2,
-		(size.Height-labelSize.Height)/2,
-	))
 }

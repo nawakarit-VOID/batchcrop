@@ -6,7 +6,6 @@ package main
 import "fyne.io/fyne/v2/app"
 
 func main() {
-
 	a := app.New()
 
 	state := NewState()
@@ -14,5 +13,4 @@ func main() {
 	w := BuildUI(a, state)
 
 	w.ShowAndRun()
-
 }

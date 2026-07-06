@@ -3,20 +3,15 @@
 // it under the terms of the GNU General Public License v3.0.
 package main
 
-import (
-	"image"
-)
+import "image/color"
 
-type AppState struct {
-	InputDir  string
-	OutputDir string
+func themeBackground() color.Color {
 
-	Images  []string
-	Current int
+	return color.NRGBA{
+		R: 40,
+		G: 40,
+		B: 40,
+		A: 255,
+	}
 
-	Img image.Image
-}
-
-func NewState() *AppState {
-	return &AppState{}
 }
