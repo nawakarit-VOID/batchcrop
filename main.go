@@ -11,6 +11,7 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -68,6 +69,8 @@ type cropSelector struct {
 	imgOriginalSize image.Point
 	scale           float32
 	dispSize        fyne.Size
+	imgDisplayPos   fyne.Position
+	imgDisplaySize  fyne.Size
 
 	bgImage *canvas.Image
 	rectObj *canvas.Rectangle
@@ -75,6 +78,9 @@ type cropSelector struct {
 
 	rectPos  fyne.Position
 	rectSize fyne.Size
+
+	rectOriginal      image.Rectangle
+	rectOriginalValid bool
 
 	dragging bool
 	dragZone dragZone
@@ -118,39 +124,83 @@ type cropSelectorRenderer struct {
 }
 
 func (r *cropSelectorRenderer) Layout(size fyne.Size) {
-	r.c.bgImage.Resize(size)
-	r.c.bgImage.Move(fyne.NewPos(0, 0))
+	r.c.updateLayout(size)
 }
 func (r *cropSelectorRenderer) MinSize() fyne.Size           { return r.c.dispSize }
 func (r *cropSelectorRenderer) Refresh()                     { canvas.Refresh(r.c) }
 func (r *cropSelectorRenderer) Objects() []fyne.CanvasObject { return r.objects }
 func (r *cropSelectorRenderer) Destroy()                     {}
 
+func (c *cropSelector) updateLayout(size fyne.Size) {
+	if size.Width <= 0 || size.Height <= 0 {
+		size = c.dispSize
+	}
+	if size.Width <= 0 || size.Height <= 0 {
+		size = fyne.NewSize(200, 200)
+	}
+
+	if c.imgOriginalSize.X <= 0 || c.imgOriginalSize.Y <= 0 {
+		c.dispSize = size
+		c.imgDisplayPos = fyne.NewPos(0, 0)
+		c.imgDisplaySize = size
+		c.bgImage.Resize(size)
+		c.bgImage.Move(fyne.NewPos(0, 0))
+		return
+	}
+
+	imgW := float32(c.imgOriginalSize.X)
+	imgH := float32(c.imgOriginalSize.Y)
+	aspect := imgW / imgH
+	widgetAspect := size.Width / size.Height
+
+	boxW, boxH := size.Width, size.Height
+	if aspect > widgetAspect {
+		boxW = size.Width
+		boxH = boxW / aspect
+	} else {
+		boxH = size.Height
+		boxW = boxH * aspect
+	}
+
+	c.imgDisplayPos = fyne.NewPos((size.Width-boxW)/2, (size.Height-boxH)/2)
+	c.imgDisplaySize = fyne.NewSize(boxW, boxH)
+	c.dispSize = c.imgDisplaySize
+	c.scale = boxW / imgW
+	if boxH/imgH < c.scale {
+		c.scale = boxH / imgH
+	}
+
+	c.bgImage.Resize(c.imgDisplaySize)
+	c.bgImage.Move(c.imgDisplayPos)
+
+	if c.rectOriginalValid {
+		c.rectPos = fyne.NewPos(float32(c.rectOriginal.Min.X)*c.scale, float32(c.rectOriginal.Min.Y)*c.scale)
+		c.rectSize = fyne.NewSize(float32(c.rectOriginal.Dx())*c.scale, float32(c.rectOriginal.Dy())*c.scale)
+		c.clampRect()
+		c.applyRectToCanvas()
+	} else {
+		boxW = c.dispSize.Width * 0.6
+		boxH = c.dispSize.Height * 0.6
+		c.rectPos = fyne.NewPos((c.dispSize.Width-boxW)/2, (c.dispSize.Height-boxH)/2)
+		c.rectSize = fyne.NewSize(boxW, boxH)
+		c.applyRectToCanvas()
+		c.rectOriginal = c.currentRectOriginal()
+		c.rectOriginalValid = true
+	}
+}
+
 // SetImage loads a new reference image (scaled down to fit the preview)
 // and places a default crop box centered at 60% of the image size.
 func (c *cropSelector) SetImage(img image.Image) {
 	c.imgOriginalSize = img.Bounds().Size()
 	c.bgImage.Image = img
+	c.rectOriginalValid = false
 
-	w, h := float32(c.imgOriginalSize.X), float32(c.imgOriginalSize.Y)
-	scale := float32(1.0)
-	if w > maxPreviewSize || h > maxPreviewSize {
-		if w > h {
-			scale = maxPreviewSize / w
-		} else {
-			scale = maxPreviewSize / h
-		}
+	startSize := c.Size()
+	if startSize.Width <= 0 || startSize.Height <= 0 {
+		startSize = fyne.NewSize(200, 200)
 	}
-	c.scale = scale
-	c.dispSize = fyne.NewSize(w*scale, h*scale)
-	c.Resize(c.dispSize)
-
-	// ตั้งค่ากรอบเริ่มต้นให้เป็น 80% ของภาพ (ไม่ใช่ 60% เพื่อให้เห็นได้ชัดขึ้น)
-	boxW := c.dispSize.Width * 0.8
-	boxH := c.dispSize.Height * 0.8
-	c.rectPos = fyne.NewPos((c.dispSize.Width-boxW)/2, (c.dispSize.Height-boxH)/2)
-	c.rectSize = fyne.NewSize(boxW, boxH)
-	c.applyRectToCanvas()
+	c.updateLayout(startSize)
 
 	c.Refresh()
 	if c.onChanged != nil {
@@ -160,18 +210,20 @@ func (c *cropSelector) SetImage(img image.Image) {
 
 // zoneAt figures out which part of the crop box (if any) a point hits.
 func (c *cropSelector) zoneAt(pos fyne.Position) dragZone {
+	relPos := fyne.NewPos(pos.X-c.imgDisplayPos.X, pos.Y-c.imgDisplayPos.Y)
+
 	left := c.rectPos.X
 	top := c.rectPos.Y
 	right := c.rectPos.X + c.rectSize.Width
 	bottom := c.rectPos.Y + c.rectSize.Height
 
-	nearLeft := absF(pos.X-left) <= handleHitZone
-	nearRight := absF(pos.X-right) <= handleHitZone
-	nearTop := absF(pos.Y-top) <= handleHitZone
-	nearBottom := absF(pos.Y-bottom) <= handleHitZone
+	nearLeft := absF(relPos.X-left) <= handleHitZone
+	nearRight := absF(relPos.X-right) <= handleHitZone
+	nearTop := absF(relPos.Y-top) <= handleHitZone
+	nearBottom := absF(relPos.Y-bottom) <= handleHitZone
 
-	withinX := pos.X >= left-handleHitZone && pos.X <= right+handleHitZone
-	withinY := pos.Y >= top-handleHitZone && pos.Y <= bottom+handleHitZone
+	withinX := relPos.X >= left-handleHitZone && relPos.X <= right+handleHitZone
+	withinY := relPos.Y >= top-handleHitZone && relPos.Y <= bottom+handleHitZone
 	if !withinX || !withinY {
 		return zoneNone
 	}
@@ -185,17 +237,17 @@ func (c *cropSelector) zoneAt(pos fyne.Position) dragZone {
 		return zoneBL
 	case nearRight && nearBottom:
 		return zoneBR
-	case nearTop && pos.X > left && pos.X < right:
+	case nearTop && relPos.X > left && relPos.X < right:
 		return zoneT
-	case nearBottom && pos.X > left && pos.X < right:
+	case nearBottom && relPos.X > left && relPos.X < right:
 		return zoneB
-	case nearLeft && pos.Y > top && pos.Y < bottom:
+	case nearLeft && relPos.Y > top && relPos.Y < bottom:
 		return zoneL
-	case nearRight && pos.Y > top && pos.Y < bottom:
+	case nearRight && relPos.Y > top && relPos.Y < bottom:
 		return zoneR
 	}
 
-	if pos.X > left && pos.X < right && pos.Y > top && pos.Y < bottom {
+	if relPos.X > left && relPos.X < right && relPos.Y > top && relPos.Y < bottom {
 		return zoneBody
 	}
 	return zoneNone
@@ -214,10 +266,7 @@ func (c *cropSelector) Dragged(ev *fyne.DragEvent) {
 	if c.dragZone == zoneNone {
 		return
 	}
-
-	// ใช้ float32 เพื่อความแม่นยำ
-	dx := float32(ev.Dragged.DX)
-	dy := float32(ev.Dragged.DY)
+	dx, dy := ev.Dragged.DX, ev.Dragged.DY
 
 	switch c.dragZone {
 	case zoneBody:
@@ -253,57 +302,29 @@ func (c *cropSelector) Dragged(ev *fyne.DragEvent) {
 
 	c.clampRect()
 	c.applyRectToCanvas()
+	c.rectOriginal = c.currentRectOriginal()
+	c.rectOriginalValid = true
 
 	if c.onChanged != nil {
 		c.onChanged(c.currentRectOriginal())
 	}
 }
 
-// เพิ่มฟังก์ชันนี้เพื่อทดสอบว่าพิกัดตรงกันหรือไม่
-func (c *cropSelector) ValidateCoordinates() string {
-	if c.scale == 0 {
-		return "ยังไม่มีการโหลดภาพ"
-	}
-
-	rect := c.currentRectOriginal()
-	displayRect := image.Rect(
-		int(float32(rect.Min.X)*c.scale),
-		int(float32(rect.Min.Y)*c.scale),
-		int(float32(rect.Max.X)*c.scale),
-		int(float32(rect.Max.Y)*c.scale),
-	)
-
-	return fmt.Sprintf(
-		"ต้นฉบับ: (%d,%d)-(%d,%d) size=%dx%d\n"+
-			"หน้าจอ: (%d,%d)-(%d,%d) size=%dx%d\n"+
-			"Scale: %.3f",
-		rect.Min.X, rect.Min.Y, rect.Max.X, rect.Max.Y, rect.Dx(), rect.Dy(),
-		displayRect.Min.X, displayRect.Min.Y, displayRect.Max.X, displayRect.Max.Y,
-		displayRect.Dx(), displayRect.Dy(),
-		c.scale,
-	)
-}
-
 func (c *cropSelector) DragEnd() { c.dragging = false }
 
 func (c *cropSelector) clampRect() {
-	// จำกัดขนาดขั้นต่ำ
 	if c.rectSize.Width < minCropSize {
 		c.rectSize.Width = minCropSize
 	}
 	if c.rectSize.Height < minCropSize {
 		c.rectSize.Height = minCropSize
 	}
-
-	// จำกัดขนาดสูงสุด
 	if c.rectSize.Width > c.dispSize.Width {
 		c.rectSize.Width = c.dispSize.Width
 	}
 	if c.rectSize.Height > c.dispSize.Height {
 		c.rectSize.Height = c.dispSize.Height
 	}
-
-	// จำกัดตำแหน่งไม่ให้เกินขอบเขต
 	if c.rectPos.X < 0 {
 		c.rectPos.X = 0
 	}
@@ -321,7 +342,7 @@ func (c *cropSelector) clampRect() {
 // applyRectToCanvas pushes c.rectPos/c.rectSize onto the visible rectangle
 // and repositions the 8 little grab-handles around it.
 func (c *cropSelector) applyRectToCanvas() {
-	c.rectObj.Move(c.rectPos)
+	c.rectObj.Move(fyne.NewPos(c.imgDisplayPos.X+c.rectPos.X, c.imgDisplayPos.Y+c.rectPos.Y))
 	c.rectObj.Resize(c.rectSize)
 	c.rectObj.Refresh()
 
@@ -344,12 +365,10 @@ func (c *cropSelector) applyRectToCanvas() {
 		{X: right, Y: midY},   // R
 	}
 	for i, p := range pts {
-		c.handles[i].Move(fyne.NewPos(p.X-half, p.Y-half))
+		handlePos := fyne.NewPos(c.imgDisplayPos.X+p.X-half, c.imgDisplayPos.Y+p.Y-half)
+		c.handles[i].Move(handlePos)
 		c.handles[i].Refresh()
 	}
-
-	// บังคับให้ refresh ทั้ง widget
-	c.Refresh()
 }
 
 // currentRectOriginal converts the on-screen box back to the reference
@@ -358,17 +377,29 @@ func (c *cropSelector) applyRectToCanvas() {
 // dragging a handle "all the way" reliably yields the full image size
 // instead of falling a pixel or two short due to rounding.
 func (c *cropSelector) currentRectOriginal() image.Rectangle {
-	if c.scale == 0 {
-		return image.Rect(0, 0, 0, 0)
+	const snapPx = 3.0
+
+	left, top := c.rectPos.X, c.rectPos.Y
+	right, bottom := c.rectPos.X+c.rectSize.Width, c.rectPos.Y+c.rectSize.Height
+
+	if left <= snapPx {
+		left = 0
+	}
+	if top <= snapPx {
+		top = 0
+	}
+	if c.dispSize.Width-right <= snapPx {
+		right = c.dispSize.Width
+	}
+	if c.dispSize.Height-bottom <= snapPx {
+		bottom = c.dispSize.Height
 	}
 
-	// คำนวณพิกัดโดยไม่ต้อง snap เพื่อความแม่นยำ
-	x0 := int(float64(c.rectPos.X) / float64(c.scale))
-	y0 := int(float64(c.rectPos.Y) / float64(c.scale))
-	x1 := int(float64(c.rectPos.X+c.rectSize.Width) / float64(c.scale))
-	y1 := int(float64(c.rectPos.Y+c.rectSize.Height) / float64(c.scale))
+	x0 := int(math.Round(float64(left / c.scale)))
+	y0 := int(math.Round(float64(top / c.scale)))
+	x1 := int(math.Round(float64(right / c.scale)))
+	y1 := int(math.Round(float64(bottom / c.scale)))
 
-	// จำกัดขอบเขตให้อยู่ในภาพ
 	if x0 < 0 {
 		x0 = 0
 	}
@@ -381,15 +412,6 @@ func (c *cropSelector) currentRectOriginal() image.Rectangle {
 	if y1 > c.imgOriginalSize.Y {
 		y1 = c.imgOriginalSize.Y
 	}
-
-	// ป้องกันกรอบเล็กเกินไป
-	if x1 <= x0 {
-		x1 = x0 + 1
-	}
-	if y1 <= y0 {
-		y1 = y0 + 1
-	}
-
 	return image.Rect(x0, y0, x1, y1)
 }
 
@@ -405,34 +427,12 @@ func (c *cropSelector) SetRectOriginal(rect image.Rectangle) {
 	if c.scale == 0 {
 		return
 	}
-
-	// จำกัด rect ให้อยู่ในขอบเขตภาพ
-	if rect.Min.X < 0 {
-		rect.Min.X = 0
-	}
-	if rect.Min.Y < 0 {
-		rect.Min.Y = 0
-	}
-	if rect.Max.X > c.imgOriginalSize.X {
-		rect.Max.X = c.imgOriginalSize.X
-	}
-	if rect.Max.Y > c.imgOriginalSize.Y {
-		rect.Max.Y = c.imgOriginalSize.Y
-	}
-
-	// คำนวณตำแหน่งบนหน้าจอ
-	c.rectPos = fyne.NewPos(
-		float32(rect.Min.X)*c.scale,
-		float32(rect.Min.Y)*c.scale,
-	)
-	c.rectSize = fyne.NewSize(
-		float32(rect.Dx())*c.scale,
-		float32(rect.Dy())*c.scale,
-	)
-
+	c.rectPos = fyne.NewPos(float32(rect.Min.X)*c.scale, float32(rect.Min.Y)*c.scale)
+	c.rectSize = fyne.NewSize(float32(rect.Dx())*c.scale, float32(rect.Dy())*c.scale)
 	c.clampRect()
 	c.applyRectToCanvas()
-	c.Refresh()
+	c.rectOriginal = rect
+	c.rectOriginalValid = true
 }
 
 func absF(v float32) float32 {
@@ -677,16 +677,6 @@ func main() {
 		widget.NewLabel("สูง:"), hEntry,
 	)
 
-	// เพิ่มปุ่มทดสอบใน main
-	testBtn := widget.NewButton("ทดสอบพิกัด", func() {
-		if selector.scale == 0 {
-			dialog.ShowInformation("ทดสอบ", "ยังไม่มีภาพ", w)
-			return
-		}
-		info := selector.ValidateCoordinates()
-		dialog.ShowInformation("ข้อมูลพิกัด", info, w)
-	})
-
 	topBar := container.NewVBox(
 		container.NewHBox(chooseInputBtn, folderLabel),
 		fileCountLabel,
@@ -695,13 +685,12 @@ func main() {
 		widget.NewLabel("ลากตรงกลางกรอบเพื่อเลื่อน หรือลากที่มุม/ขอบเพื่อยืด-หดขนาดกรอบครอป:"),
 		rectForm,
 		fullImageBtn,
-		testBtn,
 		cropAllBtn,
 		progress,
 		widget.NewSeparator(),
 	)
 
-	scrollPreview := container.NewScroll(selector)
+	scrollPreview := container.NewScroll(container.NewMax(selector))
 
 	content := container.NewBorder(topBar, nil, nil, nil, scrollPreview)
 	w.SetContent(content)
