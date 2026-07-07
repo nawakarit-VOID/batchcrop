@@ -26,19 +26,41 @@ import (
 	"fyne.io/fyne/v2/widget"
 )
 
-// silence "imported and not used" for gif encoder constant usage guard
+// keep the gif import used (needed so image.Decode recognises .gif files)
 var _ = gif.Options{}
 
-const maxPreviewSize = 640
+const (
+	maxPreviewSize = 640
+	handleVisual   = 10 // visual size (px) of the little squares at corners/edges
+	handleHitZone  = 14 // how close (px) the pointer must be to grab a handle
+	minCropSize    = 20 // minimum crop box size in display px
+)
 
 var imageExts = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true, ".gif": true,
 }
 
 // ---------------------------------------------------------------------
-// cropSelector: custom widget that shows a reference image and lets the
-// user drag out a rectangle on it to define the crop area.
+// cropSelector: shows a reference image with a crop box on top of it.
+// The box can be moved (drag inside it) or resized (drag a corner/edge
+// handle). Coordinates are converted to the original image's pixel
+// space whenever the box changes.
 // ---------------------------------------------------------------------
+
+type dragZone int
+
+const (
+	zoneNone dragZone = iota
+	zoneBody
+	zoneTL
+	zoneTR
+	zoneBL
+	zoneBR
+	zoneT
+	zoneB
+	zoneL
+	zoneR
+)
 
 type cropSelector struct {
 	widget.BaseWidget
@@ -49,9 +71,13 @@ type cropSelector struct {
 
 	bgImage *canvas.Image
 	rectObj *canvas.Rectangle
+	handles [8]*canvas.Rectangle // TL,TR,BL,BR,T,B,L,R
 
-	dragging  bool
-	dragStart fyne.Position
+	rectPos  fyne.Position
+	rectSize fyne.Size
+
+	dragging bool
+	dragZone dragZone
 
 	onChanged func(rectOriginal image.Rectangle)
 }
@@ -60,16 +86,30 @@ func newCropSelector() *cropSelector {
 	c := &cropSelector{}
 	c.bgImage = canvas.NewImageFromImage(nil)
 	c.bgImage.FillMode = canvas.ImageFillStretch
-	c.rectObj = canvas.NewRectangle(color.NRGBA{R: 0, G: 150, B: 255, A: 60})
+
+	c.rectObj = canvas.NewRectangle(color.NRGBA{R: 0, G: 150, B: 255, A: 45})
 	c.rectObj.StrokeColor = color.NRGBA{R: 0, G: 150, B: 255, A: 255}
 	c.rectObj.StrokeWidth = 2
+
+	for i := range c.handles {
+		h := canvas.NewRectangle(color.NRGBA{R: 255, G: 255, B: 255, A: 255})
+		h.StrokeColor = color.NRGBA{R: 0, G: 120, B: 220, A: 255}
+		h.StrokeWidth = 2
+		h.Resize(fyne.NewSize(handleVisual, handleVisual))
+		c.handles[i] = h
+	}
+
 	c.dispSize = fyne.NewSize(200, 200)
 	c.ExtendBaseWidget(c)
 	return c
 }
 
 func (c *cropSelector) CreateRenderer() fyne.WidgetRenderer {
-	return &cropSelectorRenderer{c: c, objects: []fyne.CanvasObject{c.bgImage, c.rectObj}}
+	objs := []fyne.CanvasObject{c.bgImage, c.rectObj}
+	for _, h := range c.handles {
+		objs = append(objs, h)
+	}
+	return &cropSelectorRenderer{c: c, objects: objs}
 }
 
 type cropSelectorRenderer struct {
@@ -86,7 +126,8 @@ func (r *cropSelectorRenderer) Refresh()                     { canvas.Refresh(r.
 func (r *cropSelectorRenderer) Objects() []fyne.CanvasObject { return r.objects }
 func (r *cropSelectorRenderer) Destroy()                     {}
 
-// SetImage loads a new reference image, scaling it down for display if needed.
+// SetImage loads a new reference image (scaled down to fit the preview)
+// and places a default crop box centered at 60% of the image size.
 func (c *cropSelector) SetImage(img image.Image) {
 	c.imgOriginalSize = img.Bounds().Size()
 	c.bgImage.Image = img
@@ -103,31 +144,111 @@ func (c *cropSelector) SetImage(img image.Image) {
 	c.scale = scale
 	c.dispSize = fyne.NewSize(w*scale, h*scale)
 	c.Resize(c.dispSize)
+
+	boxW := c.dispSize.Width * 0.6
+	boxH := c.dispSize.Height * 0.6
+	c.rectPos = fyne.NewPos((c.dispSize.Width-boxW)/2, (c.dispSize.Height-boxH)/2)
+	c.rectSize = fyne.NewSize(boxW, boxH)
+	c.applyRectToCanvas()
+
 	c.Refresh()
+	if c.onChanged != nil {
+		c.onChanged(c.currentRectOriginal())
+	}
 }
 
-// Dragged implements fyne.Draggable - lets the user rubber-band select a rect.
+// zoneAt figures out which part of the crop box (if any) a point hits.
+func (c *cropSelector) zoneAt(pos fyne.Position) dragZone {
+	left := c.rectPos.X
+	top := c.rectPos.Y
+	right := c.rectPos.X + c.rectSize.Width
+	bottom := c.rectPos.Y + c.rectSize.Height
+
+	nearLeft := absF(pos.X-left) <= handleHitZone
+	nearRight := absF(pos.X-right) <= handleHitZone
+	nearTop := absF(pos.Y-top) <= handleHitZone
+	nearBottom := absF(pos.Y-bottom) <= handleHitZone
+
+	withinX := pos.X >= left-handleHitZone && pos.X <= right+handleHitZone
+	withinY := pos.Y >= top-handleHitZone && pos.Y <= bottom+handleHitZone
+	if !withinX || !withinY {
+		return zoneNone
+	}
+
+	switch {
+	case nearLeft && nearTop:
+		return zoneTL
+	case nearRight && nearTop:
+		return zoneTR
+	case nearLeft && nearBottom:
+		return zoneBL
+	case nearRight && nearBottom:
+		return zoneBR
+	case nearTop && pos.X > left && pos.X < right:
+		return zoneT
+	case nearBottom && pos.X > left && pos.X < right:
+		return zoneB
+	case nearLeft && pos.Y > top && pos.Y < bottom:
+		return zoneL
+	case nearRight && pos.Y > top && pos.Y < bottom:
+		return zoneR
+	}
+
+	if pos.X > left && pos.X < right && pos.Y > top && pos.Y < bottom {
+		return zoneBody
+	}
+	return zoneNone
+}
+
+// Dragged implements fyne.Draggable.
 func (c *cropSelector) Dragged(ev *fyne.DragEvent) {
 	if c.scale == 0 {
 		return
 	}
 	if !c.dragging {
 		c.dragging = true
-		c.dragStart = fyne.NewPos(ev.Position.X-ev.Dragged.DX, ev.Position.Y-ev.Dragged.DY)
+		startPos := fyne.NewPos(ev.Position.X-ev.Dragged.DX, ev.Position.Y-ev.Dragged.DY)
+		c.dragZone = c.zoneAt(startPos)
 	}
-	pos := ev.Position
-	x1, y1 := c.dragStart.X, c.dragStart.Y
-	x2, y2 := pos.X, pos.Y
-	left, top := minF(x1, x2), minF(y1, y2)
-	right, bottom := maxF(x1, x2), maxF(y1, y2)
-	left = clampF(left, 0, c.dispSize.Width)
-	top = clampF(top, 0, c.dispSize.Height)
-	right = clampF(right, 0, c.dispSize.Width)
-	bottom = clampF(bottom, 0, c.dispSize.Height)
+	if c.dragZone == zoneNone {
+		return
+	}
+	dx, dy := ev.Dragged.DX, ev.Dragged.DY
 
-	c.rectObj.Move(fyne.NewPos(left, top))
-	c.rectObj.Resize(fyne.NewSize(right-left, bottom-top))
-	c.rectObj.Refresh()
+	switch c.dragZone {
+	case zoneBody:
+		c.rectPos.X += dx
+		c.rectPos.Y += dy
+	case zoneTL:
+		c.rectPos.X += dx
+		c.rectPos.Y += dy
+		c.rectSize.Width -= dx
+		c.rectSize.Height -= dy
+	case zoneTR:
+		c.rectPos.Y += dy
+		c.rectSize.Width += dx
+		c.rectSize.Height -= dy
+	case zoneBL:
+		c.rectPos.X += dx
+		c.rectSize.Width -= dx
+		c.rectSize.Height += dy
+	case zoneBR:
+		c.rectSize.Width += dx
+		c.rectSize.Height += dy
+	case zoneT:
+		c.rectPos.Y += dy
+		c.rectSize.Height -= dy
+	case zoneB:
+		c.rectSize.Height += dy
+	case zoneL:
+		c.rectPos.X += dx
+		c.rectSize.Width -= dx
+	case zoneR:
+		c.rectSize.Width += dx
+	}
+
+	c.clampRect()
+	c.applyRectToCanvas()
 
 	if c.onChanged != nil {
 		c.onChanged(c.currentRectOriginal())
@@ -136,49 +257,87 @@ func (c *cropSelector) Dragged(ev *fyne.DragEvent) {
 
 func (c *cropSelector) DragEnd() { c.dragging = false }
 
+func (c *cropSelector) clampRect() {
+	if c.rectSize.Width < minCropSize {
+		c.rectSize.Width = minCropSize
+	}
+	if c.rectSize.Height < minCropSize {
+		c.rectSize.Height = minCropSize
+	}
+	if c.rectSize.Width > c.dispSize.Width {
+		c.rectSize.Width = c.dispSize.Width
+	}
+	if c.rectSize.Height > c.dispSize.Height {
+		c.rectSize.Height = c.dispSize.Height
+	}
+	if c.rectPos.X < 0 {
+		c.rectPos.X = 0
+	}
+	if c.rectPos.Y < 0 {
+		c.rectPos.Y = 0
+	}
+	if c.rectPos.X+c.rectSize.Width > c.dispSize.Width {
+		c.rectPos.X = c.dispSize.Width - c.rectSize.Width
+	}
+	if c.rectPos.Y+c.rectSize.Height > c.dispSize.Height {
+		c.rectPos.Y = c.dispSize.Height - c.rectSize.Height
+	}
+}
+
+// applyRectToCanvas pushes c.rectPos/c.rectSize onto the visible rectangle
+// and repositions the 8 little grab-handles around it.
+func (c *cropSelector) applyRectToCanvas() {
+	c.rectObj.Move(c.rectPos)
+	c.rectObj.Resize(c.rectSize)
+	c.rectObj.Refresh()
+
+	left := c.rectPos.X
+	top := c.rectPos.Y
+	right := c.rectPos.X + c.rectSize.Width
+	bottom := c.rectPos.Y + c.rectSize.Height
+	midX := left + c.rectSize.Width/2
+	midY := top + c.rectSize.Height/2
+	half := float32(handleVisual) / 2
+
+	pts := [8]fyne.Position{
+		{X: left, Y: top},     // TL
+		{X: right, Y: top},    // TR
+		{X: left, Y: bottom},  // BL
+		{X: right, Y: bottom}, // BR
+		{X: midX, Y: top},     // T
+		{X: midX, Y: bottom},  // B
+		{X: left, Y: midY},    // L
+		{X: right, Y: midY},   // R
+	}
+	for i, p := range pts {
+		c.handles[i].Move(fyne.NewPos(p.X-half, p.Y-half))
+		c.handles[i].Refresh()
+	}
+}
+
 func (c *cropSelector) currentRectOriginal() image.Rectangle {
-	pos := c.rectObj.Position()
-	size := c.rectObj.Size()
-	x0 := int(pos.X / c.scale)
-	y0 := int(pos.Y / c.scale)
-	x1 := int((pos.X + size.Width) / c.scale)
-	y1 := int((pos.Y + size.Height) / c.scale)
+	x0 := int(c.rectPos.X / c.scale)
+	y0 := int(c.rectPos.Y / c.scale)
+	x1 := int((c.rectPos.X + c.rectSize.Width) / c.scale)
+	y1 := int((c.rectPos.Y + c.rectSize.Height) / c.scale)
 	return image.Rect(x0, y0, x1, y1)
 }
 
-// SetRectOriginal updates the overlay rectangle from a rect given in the
-// reference image's original pixel coordinates (e.g. from manual entry).
+// SetRectOriginal updates the box from a rect given in the reference
+// image's original pixel coordinates (used when the user types numbers).
 func (c *cropSelector) SetRectOriginal(rect image.Rectangle) {
 	if c.scale == 0 {
 		return
 	}
-	x := float32(rect.Min.X) * c.scale
-	y := float32(rect.Min.Y) * c.scale
-	w := float32(rect.Dx()) * c.scale
-	h := float32(rect.Dy()) * c.scale
-	c.rectObj.Move(fyne.NewPos(x, y))
-	c.rectObj.Resize(fyne.NewSize(w, h))
-	c.rectObj.Refresh()
+	c.rectPos = fyne.NewPos(float32(rect.Min.X)*c.scale, float32(rect.Min.Y)*c.scale)
+	c.rectSize = fyne.NewSize(float32(rect.Dx())*c.scale, float32(rect.Dy())*c.scale)
+	c.clampRect()
+	c.applyRectToCanvas()
 }
 
-func minF(a, b float32) float32 {
-	if a < b {
-		return a
-	}
-	return b
-}
-func maxF(a, b float32) float32 {
-	if a > b {
-		return a
-	}
-	return b
-}
-func clampF(v, lo, hi float32) float32 {
-	if v < lo {
-		return lo
-	}
-	if v > hi {
-		return hi
+func absF(v float32) float32 {
+	if v < 0 {
+		return -v
 	}
 	return v
 }
@@ -215,7 +374,7 @@ func cropAndSave(srcPath, outDir string, rect image.Rectangle) error {
 	case "png":
 		outPath = filepath.Join(outDir, base+".png")
 	case "gif":
-		// gif encoding needs a paletted image; save as png instead to keep full color/quality
+		// gif needs a paletted image; save as png instead to keep full color/quality
 		outPath = filepath.Join(outDir, base+".png")
 	default:
 		outPath = filepath.Join(outDir, base+".jpg")
@@ -332,11 +491,7 @@ func main() {
 					dialog.ShowError(err, w)
 					return
 				}
-				selector.SetImage(img)
-				b := img.Bounds()
-				defaultRect := image.Rect(0, 0, b.Dx()/2, b.Dy()/2)
-				setEntriesFromRect(defaultRect)
-				selector.SetRectOriginal(defaultRect)
+				selector.SetImage(img) // this also places a default crop box + fires onChanged
 			} else {
 				dialog.ShowInformation("แจ้งเตือน", "ไม่พบไฟล์ภาพ (.jpg .jpeg .png .gif) ในโฟลเดอร์นี้", w)
 			}
@@ -418,7 +573,7 @@ func main() {
 		fileCountLabel,
 		container.NewHBox(chooseOutputBtn, outLabel),
 		widget.NewSeparator(),
-		widget.NewLabel("ลากเมาส์บนภาพด้านล่างเพื่อเลือกพื้นที่ครอป (จะใช้ตำแหน่ง/ขนาดเดียวกันกับทุกภาพ) หรือกรอกตัวเลขเอง:"),
+		widget.NewLabel("ลากตรงกลางกรอบเพื่อเลื่อน หรือลากที่มุม/ขอบเพื่อยืด-หดขนาดกรอบครอป:"),
 		rectForm,
 		cropAllBtn,
 		progress,
