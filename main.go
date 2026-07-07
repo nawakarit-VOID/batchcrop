@@ -91,7 +91,7 @@ type cropSelector struct {
 func newCropSelector() *cropSelector {
 	c := &cropSelector{}
 	c.bgImage = canvas.NewImageFromImage(nil)
-	c.bgImage.FillMode = canvas.ImageFillStretch
+	c.bgImage.FillMode = canvas.ImageFillContain
 
 	c.rectObj = canvas.NewRectangle(color.NRGBA{R: 0, G: 150, B: 255, A: 45})
 	c.rectObj.StrokeColor = color.NRGBA{R: 0, G: 150, B: 255, A: 255}
@@ -126,10 +126,17 @@ type cropSelectorRenderer struct {
 func (r *cropSelectorRenderer) Layout(size fyne.Size) {
 	r.c.updateLayout(size)
 }
-func (r *cropSelectorRenderer) MinSize() fyne.Size           { return r.c.dispSize }
+func (r *cropSelectorRenderer) MinSize() fyne.Size {
+	return fyne.NewSize(200, 200)
+}
 func (r *cropSelectorRenderer) Refresh()                     { canvas.Refresh(r.c) }
 func (r *cropSelectorRenderer) Objects() []fyne.CanvasObject { return r.objects }
 func (r *cropSelectorRenderer) Destroy()                     {}
+
+func (c *cropSelector) Resize(size fyne.Size) {
+	c.BaseWidget.Resize(size)
+	c.updateLayout(size)
+}
 
 func (c *cropSelector) updateLayout(size fyne.Size) {
 	if size.Width <= 0 || size.Height <= 0 {
@@ -677,7 +684,7 @@ func main() {
 		widget.NewLabel("สูง:"), hEntry,
 	)
 
-	topBar := container.NewVBox(
+	L := container.NewVBox(
 		container.NewHBox(chooseInputBtn, folderLabel),
 		fileCountLabel,
 		container.NewHBox(chooseOutputBtn, outLabel),
@@ -690,9 +697,10 @@ func main() {
 		widget.NewSeparator(),
 	)
 
-	scrollPreview := container.NewScroll(container.NewMax(selector))
+	content := container.NewBorder(L, nil, nil, nil, selector)
 
-	content := container.NewBorder(topBar, nil, nil, nil, scrollPreview)
 	w.SetContent(content)
 	w.ShowAndRun()
 }
+
+//**เพิ่มปุ่ม เพิ่ม ลด ทีละ 1 ของ xy กว้าง สูง
