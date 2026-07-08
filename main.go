@@ -188,16 +188,21 @@ func main() {
 				} else {
 					okCount++
 				}
-				progress.SetValue(float64(i+1) / float64(total))
+				pct := float64(i+1) / float64(total)
+				fyne.Do(func() {
+					progress.SetValue(pct)
+				})
 			}
-			progress.Hide()
-			cropAllBtn.Enable()
-			if lastErr != nil {
-				dialog.ShowInformation("เสร็จสิ้น (มีข้อผิดพลาดบางไฟล์)",
-					fmt.Sprintf("ครอปสำเร็จ %d/%d ไฟล์\nข้อผิดพลาดล่าสุด: %v", okCount, total, lastErr), w)
-			} else {
-				dialog.ShowInformation("เสร็จสิ้น", fmt.Sprintf("ครอปสำเร็จทั้งหมด %d ไฟล์ ✅", okCount), w)
-			}
+			fyne.Do(func() {
+				progress.Hide()
+				cropAllBtn.Enable()
+				if lastErr != nil {
+					dialog.ShowInformation("เสร็จสิ้น (มีข้อผิดพลาดบางไฟล์)",
+						fmt.Sprintf("ครอปสำเร็จ %d/%d ไฟล์\nข้อผิดพลาดล่าสุด: %v", okCount, total, lastErr), w)
+				} else {
+					dialog.ShowInformation("เสร็จสิ้น", fmt.Sprintf("ครอปสำเร็จทั้งหมด %d ไฟล์ ✅", okCount), w)
+				}
+			})
 		}()
 	}
 
