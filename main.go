@@ -689,20 +689,27 @@ func main() {
 			container.NewHBox(container.NewGridWrap(fyne.NewSize(100, 40), widget.NewLabel("H :")), container.NewGridWrap(fyne.NewSize(100, 40), hEntry)),
 		))
 
-	L := container.NewVBox(
-		container.NewHBox(
+	R := container.NewVBox(
+		container.NewHBox( //เลือกโฟลเดอร์ไฟล์
 			container.NewGridWrap(fyne.NewSize(100, 35), chooseInputBtn),
 			container.NewGridWrap(fyne.NewSize(200, 35), container.NewHScroll(folderLabel))),
 		container.NewHBox(
 			container.NewGridWrap(fyne.NewSize(100, 35), chooseOutputBtn),
 			container.NewGridWrap(fyne.NewSize(200, 35), container.NewHScroll(outLabel))),
 
+		container.NewCenter(fileCountLabel), //จำนวนภาพ
+		rectForm,                            // X-Y-W-H
+
 		//widget.NewSeparator(),
-		rectForm,
-		container.NewHBox(fileCountLabel, fullImageBtn, cropAllBtn, progress),
+
+		fullImageBtn,
+		widget.NewLabel(""), // ว่าง
+
+		cropAllBtn,
+		progress,
 	)
 
-	content := container.NewBorder(nil, nil, nil, L, selector)
+	content := container.NewBorder(nil, nil, nil, R, selector)
 	/*
 		// สร้างแนวนอน (ซ้าย-ขวา)
 		content := container.NewHSplit(L, selector)
