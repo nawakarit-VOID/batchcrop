@@ -59,12 +59,15 @@ var myFont = fyne.NewStaticResource("Itim-Regular.ttf", fontItim)
 // ---------------------------------------------------------------------
 
 func main() {
-	a := app.New()
+	a := app.NewWithID("com.nawakarit.batchcrop")
+	a.Settings().SetTheme(&MyTheme{})
+
 	icons := loadIcon(64) //เอา data มาใช้
 	a.SetIcon(icons)
+
 	w := a.NewWindow("batchcrop : โปรแกรมครอปภาพหลายไฟล์พร้อมกัน")
 	w.Resize(fyne.NewSize(950, 750))
-	a.Settings().SetTheme(&MyTheme{})
+	w.SetIcon(icons)
 
 	var (
 		inputFolder  string
