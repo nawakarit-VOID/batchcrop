@@ -7,11 +7,7 @@ import (
 	"fmt"
 	"image"
 	"image/gif"
-	"os"
-	"path/filepath"
-	"sort"
 	"strconv"
-	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
@@ -96,35 +92,18 @@ func main() {
 				return
 			}
 			inputFolder = uri.Path()
-			//folderLabel.SetText("ต้นทาง: " + inputFolder)
 			folderLabel.SetText(inputFolder)
 
-			entries, err := os.ReadDir(inputFolder)
+			files, err := loadImageFiles(inputFolder)
 			if err != nil {
 				dialog.ShowError(err, w)
 				return
 			}
-			imageFiles = nil
-			for _, en := range entries {
-				if en.IsDir() {
-					continue
-				}
-				ext := strings.ToLower(filepath.Ext(en.Name()))
-				if imageExts[ext] {
-					imageFiles = append(imageFiles, filepath.Join(inputFolder, en.Name()))
-				}
-			}
-			sort.Strings(imageFiles)
+			imageFiles = files
 			fileCountLabel.SetText(fmt.Sprintf("พบ %d ไฟล์ภาพ", len(imageFiles)))
 
 			if len(imageFiles) > 0 {
-				f, err := os.Open(imageFiles[0])
-				if err != nil {
-					dialog.ShowError(err, w)
-					return
-				}
-				img, _, err := image.Decode(f)
-				f.Close()
+				img, err := decodeImageFile(imageFiles[0])
 				if err != nil {
 					dialog.ShowError(err, w)
 					return
@@ -253,5 +232,3 @@ func main() {
 	w.SetContent(content)
 	w.ShowAndRun()
 }
-
-//**เพิ่มปุ่ม เพิ่ม ลด ทีละ 1 ของ xy กว้าง สูง
