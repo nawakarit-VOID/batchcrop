@@ -519,7 +519,7 @@ func main() {
 
 	selector := newCropSelector()
 
-	folderLabel := widget.NewLabel("ยังไม่ได้เลือกโฟลเดอร์ภาพต้นทาง")
+	folderLabel := widget.NewLabel("ยังไม่ได้เลือกโฟลเดอร์ต้นทาง")
 	outLabel := widget.NewLabel("ยังไม่ได้เลือกโฟลเดอร์ปลายทาง")
 	fileCountLabel := widget.NewLabel("พบ 0 ไฟล์ภาพ")
 
@@ -681,24 +681,28 @@ func main() {
 		setEntriesFromRect(full)
 	})
 
-	rectForm := container.NewGridWithColumns(4,
-		widget.NewLabel("X:"), xEntry,
-		widget.NewLabel("Y:"), yEntry,
-		widget.NewLabel("กว้าง:"), wEntry,
-		widget.NewLabel("สูง:"), hEntry,
-	)
+	rectForm := container.NewCenter(
+		container.NewVBox(
+			container.NewHBox(container.NewGridWrap(fyne.NewSize(100, 40), widget.NewLabel("X :")), container.NewGridWrap(fyne.NewSize(100, 40), xEntry)),
+			container.NewHBox(container.NewGridWrap(fyne.NewSize(100, 40), widget.NewLabel("Y :")), container.NewGridWrap(fyne.NewSize(100, 40), yEntry)),
+			container.NewHBox(container.NewGridWrap(fyne.NewSize(100, 40), widget.NewLabel("W :")), container.NewGridWrap(fyne.NewSize(100, 40), wEntry)),
+			container.NewHBox(container.NewGridWrap(fyne.NewSize(100, 40), widget.NewLabel("H :")), container.NewGridWrap(fyne.NewSize(100, 40), hEntry)),
+		))
 
 	L := container.NewVBox(
-		container.NewHBox(chooseInputBtn, folderLabel),
-		fileCountLabel,
-		container.NewHBox(chooseOutputBtn, outLabel),
+		container.NewHBox(
+			container.NewGridWrap(fyne.NewSize(100, 35), chooseInputBtn),
+			container.NewGridWrap(fyne.NewSize(200, 35), container.NewHScroll(folderLabel))),
+		container.NewHBox(
+			container.NewGridWrap(fyne.NewSize(100, 35), chooseOutputBtn),
+			container.NewGridWrap(fyne.NewSize(200, 35), container.NewHScroll(outLabel))),
 
 		//widget.NewSeparator(),
-		container.NewHBox(rectForm, fullImageBtn, cropAllBtn, progress),
-		//widget.NewSeparator(),
+		rectForm,
+		container.NewHBox(fileCountLabel, fullImageBtn, cropAllBtn, progress),
 	)
 
-	content := container.NewBorder(L, nil, nil, nil, selector)
+	content := container.NewBorder(nil, nil, nil, L, selector)
 	/*
 		// สร้างแนวนอน (ซ้าย-ขวา)
 		content := container.NewHSplit(L, selector)
