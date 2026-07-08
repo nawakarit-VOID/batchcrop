@@ -21,6 +21,7 @@ import (
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
 	"fyne.io/fyne/v2/canvas"
+
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
@@ -560,13 +561,14 @@ func main() {
 	wEntry.OnChanged = func(string) { applyEntriesToOverlay() }
 	hEntry.OnChanged = func(string) { applyEntriesToOverlay() }
 
-	chooseInputBtn := widget.NewButtonWithIcon("เลือกโฟลเดอร์ภาพต้นทาง", theme.FolderOpenIcon(), func() {
+	chooseInputBtn := widget.NewButtonWithIcon("IN", theme.FolderOpenIcon(), func() {
 		dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err != nil || uri == nil {
 				return
 			}
 			inputFolder = uri.Path()
-			folderLabel.SetText("ต้นทาง: " + inputFolder)
+			//folderLabel.SetText("ต้นทาง: " + inputFolder)
+			folderLabel.SetText(inputFolder)
 
 			entries, err := os.ReadDir(inputFolder)
 			if err != nil {
@@ -605,13 +607,15 @@ func main() {
 		}, w)
 	})
 
-	chooseOutputBtn := widget.NewButtonWithIcon("เลือกโฟลเดอร์ปลายทาง", theme.FolderIcon(), func() {
+	chooseOutputBtn := widget.NewButtonWithIcon("OUT", theme.FolderIcon(), func() {
 		dialog.ShowFolderOpen(func(uri fyne.ListableURI, err error) {
 			if err != nil || uri == nil {
 				return
 			}
 			outputFolder = uri.Path()
-			outLabel.SetText("ปลายทาง: " + outputFolder)
+			//outLabel.SetText("ปลายทาง: " + outputFolder)
+			outLabel.SetText(outputFolder)
+
 		}, w)
 	})
 
@@ -688,16 +692,18 @@ func main() {
 		container.NewHBox(chooseInputBtn, folderLabel),
 		fileCountLabel,
 		container.NewHBox(chooseOutputBtn, outLabel),
-		widget.NewSeparator(),
-		widget.NewLabel("ลากตรงกลางกรอบเพื่อเลื่อน หรือลากที่มุม/ขอบเพื่อยืด-หดขนาดกรอบครอป:"),
-		rectForm,
-		fullImageBtn,
-		cropAllBtn,
-		progress,
-		widget.NewSeparator(),
+
+		//widget.NewSeparator(),
+		container.NewHBox(rectForm, fullImageBtn, cropAllBtn, progress),
+		//widget.NewSeparator(),
 	)
 
 	content := container.NewBorder(L, nil, nil, nil, selector)
+	/*
+		// สร้างแนวนอน (ซ้าย-ขวา)
+		content := container.NewHSplit(L, selector)
+		content.SetOffset(0.1) // ตั้งค่าเป็น 70/30
+	*/
 
 	w.SetContent(content)
 	w.ShowAndRun()
