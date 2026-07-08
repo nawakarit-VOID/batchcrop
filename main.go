@@ -157,22 +157,10 @@ func main() {
 		filesToProcess := append([]string(nil), imageFiles...)
 		outDir := outputFolder
 
-		go func() {
-			total := len(filesToProcess)
-			okCount := 0
-			var lastErr error
-			for i, path := range filesToProcess {
-				if err := cropAndSave(path, outDir, cropRect); err != nil {
-					lastErr = err
-				} else {
-					okCount++
-				}
-				pct := float64(i+1) / float64(total)
-				fyne.Do(func() {
-					progress.SetValue(pct)
-				})
-			}
-			fyne.Do(func() {
+		startBatchCrop(
+			w,
+			func(pct float64) { progress.SetValue(pct) },
+			func(okCount, total int, lastErr error) {
 				progress.Hide()
 				cropAllBtn.Enable()
 				if lastErr != nil {
@@ -181,8 +169,11 @@ func main() {
 				} else {
 					dialog.ShowInformation("เสร็จสิ้น", fmt.Sprintf("ครอปสำเร็จทั้งหมด %d ไฟล์ ✅", okCount), w)
 				}
-			})
-		}()
+			},
+			filesToProcess,
+			outDir,
+			cropRect,
+		)
 	}
 
 	fullImageBtn := widget.NewButton("เลือกเต็มภาพ", func() {
