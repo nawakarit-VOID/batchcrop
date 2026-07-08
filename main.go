@@ -4,6 +4,7 @@
 package main
 
 import (
+	"embed"
 	"fmt"
 	"image"
 	"image/gif"
@@ -27,14 +28,43 @@ var imageExts = map[string]bool{
 	".jpg": true, ".jpeg": true, ".png": true, ".gif": true,
 }
 
+// โหลด icon
+func loadIcon(size int) fyne.Resource {
+	var file string
+
+	switch {
+	case size >= 512:
+		file = "assets/icons/icon-512.png" ///ที่อยู่
+	case size >= 256:
+		file = "assets/icons/icon-256.png"
+	case size >= 128:
+		file = "assets/icons/icon-128.png"
+	default:
+		file = "assets/icons/icon-64.png"
+	}
+
+	data, _ := iconFS.ReadFile(file)
+	return fyne.NewStaticResource(file, data)
+}
+
+//go:embed assets/icons/*
+var iconFS embed.FS
+
+//go:embed assets/font/Itim-Regular.ttf
+var fontItim []byte
+var myFont = fyne.NewStaticResource("Itim-Regular.ttf", fontItim)
+
 // ---------------------------------------------------------------------
 // main / UI
 // ---------------------------------------------------------------------
 
 func main() {
 	a := app.New()
-	w := a.NewWindow("โปรแกรมครอปภาพหลายไฟล์พร้อมกัน")
+	icons := loadIcon(64) //เอา data มาใช้
+	a.SetIcon(icons)
+	w := a.NewWindow("batchcrop : โปรแกรมครอปภาพหลายไฟล์พร้อมกัน")
 	w.Resize(fyne.NewSize(950, 750))
+	a.Settings().SetTheme(&MyTheme{})
 
 	var (
 		inputFolder  string
@@ -185,6 +215,10 @@ func main() {
 		setEntriesFromRect(full)
 	})
 
+	abbtn := widget.NewButton("!", func() {
+		dialog.ShowInformation("about", "*ไฟล์ภาพทั้งโฟลเดอร์ต้องมีขนาด ความกว้าง ความยาว เท่ากัน\n\nBy nawakarit - เจช์ (วัดดงหมี)\nhttps://github.com/nawakarit-VOID\n© 2026", w)
+	})
+
 	rectForm := container.NewCenter(
 		container.NewVBox(
 			container.NewHBox(container.NewGridWrap(fyne.NewSize(100, 40), widget.NewLabel("X :")), container.NewGridWrap(fyne.NewSize(100, 40), xEntry)),
@@ -201,8 +235,10 @@ func main() {
 			container.NewGridWrap(fyne.NewSize(100, 35), chooseOutputBtn),
 			container.NewGridWrap(fyne.NewSize(200, 35), container.NewHScroll(outLabel))),
 
-		container.NewCenter(fileCountLabel), //จำนวนภาพ
-		rectForm,                            // X-Y-W-H
+		container.NewCenter(
+			container.NewHBox(
+				fileCountLabel, abbtn)), //จำนวนภาพ
+		rectForm, // X-Y-W-H
 
 		//widget.NewSeparator(),
 
@@ -214,11 +250,6 @@ func main() {
 	)
 
 	content := container.NewBorder(nil, nil, nil, R, selector)
-	/*
-		// สร้างแนวนอน (ซ้าย-ขวา)
-		content := container.NewHSplit(L, selector)
-		content.SetOffset(0.1) // ตั้งค่าเป็น 70/30
-	*/
 
 	w.SetContent(content)
 	w.ShowAndRun()
